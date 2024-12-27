@@ -27,13 +27,11 @@ static int url_request_callback(llhttp_t *parser, const char *url, unsigned long
     return 0;
 }
 
-static int url_complete_request_callback(llhttp_t *parser, const char *url, unsigned long len) {
-    http_request_t *request = parser->data;
-    
-    request->url = strndup(url, len);
-
-    return 0;
-}
+// static int url_complete_request_callback(llhttp_t *parser, const char *url, unsigned long len) {
+//     http_request_t *request = parser->data;
+//     request->url = strndup(url, len);
+//     return 0;
+// }
 
 static int version_complete_request_callback(llhttp_t *parser) {
     http_request_t *request = parser->data;
@@ -110,16 +108,3 @@ int http_response_parse(http_response_t *response, char *buf, int len) {
 
     return 0;
 }
-
-// char *http_host_from_url(char *url) {
-//     char *host;
-//     if (!url) {
-//         return NULL;
-//     }
-
-//     if (sscanf(url, "http://%m[^/]%*s", &host) < 1) {
-//         return NULL;
-//     }
-
-//     return host;
-// }

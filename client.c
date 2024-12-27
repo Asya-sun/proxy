@@ -19,10 +19,6 @@
 #include "http_utils/http_utils.h"
 #include "llhttp.h"
 
-// #include "http_parser/http_request_parser.h"
-// #include "picohttpparser.h"
-// #include "../hashmap/hashmap.h"
-
 
 #define BUFF_SIZE 256 * 8
 #define START_RESPONCE_BUFF_SIZE 1024 * 1024
@@ -72,102 +68,6 @@ int parse_url(const char *url, char *host, size_t max_host_len, int *port, Logge
 
     return 0;
 }
-
-/**
-//  * return 0 if success
-//  * 1 if not success
- * return number of read bytes on success
- * -1 f error
- * //should i change size of buffer if message is too big?
- * //i do!
- */
-int read_max_possible(int client_fd, char *buffer, size_t *buffer_size, Logger *logger) {
-    size_t total_read = 0;
-    size_t number_read;
-    // timeout
-    // \r\n\r\n - конец get
-    while ((number_read = read(client_fd, buffer + total_read, *buffer_size - total_read)) > 0) {
-        const size_t end_len = 4;
-        const char *end = "\r\n\r\n\0";
-        total_read += number_read;
-
-        elog(logger, INFO, "read %ld bytes of request data", total_read);
-
-        if (*buffer_size == total_read) {
-            // elog(logger, ERROR, "too big message");
-            // return 1;
-            char *tmp = buffer;
-            *buffer_size *= 2;
-            buffer = realloc(buffer, *buffer_size);
-            if (buffer == NULL) {
-                elog(logger, ERROR, strerror(errno));
-                free(tmp);
-                return -1;
-            }
-        }
-
-        buffer[total_read] = '\0';
-
-        if (total_read > end_len && (strcmp(end, buffer + total_read - 4) == 0)) {
-            break;
-        }
-
-        elog(logger, INFO, "waiting for next bytes (strcmp res: %d)", strcmp(end, buffer + total_read - 4));
-    }
-
-// 0 - connectio was cloxed
-    elog(logger, INFO, "full request received (%ld bytes)", total_read);
-    elog(logger, INFO, "total_read: %ld bytes   strlen(buffer): %ld bytes/n", total_read, strlen(buffer));
-
-    if (number_read == -1) {
-        elog(logger, ERROR, strerror(errno), NULL);
-        return -1;
-    }
-    return total_read;
-}
-
-// int read_request(int client_fd, char *buffer, size_t *buffer_size, Logger *logger) {
-//     const size_t end_len = 4;
-//     const char *end = "\r\n\r\n\0";    
-//     size_t total_read = 0;
-//     size_t number_read; 
-//     /**
-//      * a litle bit of explanation
-//      * if we get end of request, which is pointed by "\r\n\r\n\0", we it means we got write request
-//      * otherwise, if we get out of while - read return value <=0, which means error or closed connection
-//      */
-//     while ((number_read = read(client_fd, buffer + total_read, *buffer_size - total_read)) > 0) {
-//         total_read += number_read;
-//         elog(logger, INFO, "read %ld bytes of request data", total_read);
-//         if (*buffer_size == total_read) {
-//             // elog(logger, ERROR, "too big message");
-//             // return 1;
-//             char *tmp = buffer;
-//             *buffer_size *= 2;
-//             buffer = realloc(buffer, *buffer_size);
-//             if (buffer == NULL) {
-//                 elog(logger, ERROR, strerror(errno));
-//                 free(tmp);
-//                 return -1;
-//             }
-//         }
-//         buffer[total_read] = '\0';
-//         if (total_read > end_len && (strcmp(end, buffer + total_read - 4) == 0)) {
-//             break;
-//         }
-//         elog(logger, INFO, "waiting for next bytes (strcmp res: %d)", strcmp(end, buffer + total_read - 4));
-//     }
-// // 0 - connectio was cloxed
-//     if (number_read == -1) {
-//         elog(logger, ERROR, "error occurred while reading request: %s", strerror(errno), NULL);
-//         return -1;
-//     } else if (number_read == 0) {
-//         elog(logger, ERROR, "connection was closed by the client");
-//     }
-//     elog(logger, INFO, "full request received (%ld bytes)", total_read);
-//     elog(logger, INFO, "total_read: %ld bytes   strlen(buffer): %ld bytes/n", total_read, strlen(buffer));
-//     return total_read;
-// }
 
 
 
@@ -222,7 +122,7 @@ int read_parse_responce(http_response_t *responce, char **buffer, size_t *buffer
     while(!responce->finished) {
 
         if (total_read == responce_maxsise) {
-            responce_maxsise = responce_maxsise * 3 / 2;
+            responce_maxsise = responce_maxsise * 2;
             char *tmp = realloc(*buffer, responce_maxsise);
             if (tmp == NULL) {
                 elog(logger, ERROR, "realloc error: %s\n", strerror(errno));
@@ -325,8 +225,6 @@ int write_all_bytes(const char *data, int data_size, int fd, Logger *logger) {
     int totallyWroteBytes = 0;
 
     while (totallyWroteBytes != data_size) {
-        // wroteBytes = send(fd, data + totallyWroteBytes,
-        //                   data_size - totallyWroteBytes, MSG_NOSIGNAL);
         wroteBytes = write(fd, data + totallyWroteBytes, data_size - totallyWroteBytes);
         if (wroteBytes == -1) {
             elog(logger, ERROR,  "single host server: send request to client: write: %s\n", strerror(errno));
@@ -337,25 +235,6 @@ int write_all_bytes(const char *data, int data_size, int fd, Logger *logger) {
                totallyWroteBytes, data_size, pthread_self());
     }
     return 0;
-}
-
-
-void split_host_port(char *addr, char *host, int *port) {
-    // Находим символ ':', который разделяет хост и порт
-    char *colon_position = strchr(addr, ':');
-    if (colon_position != NULL) {
-        // Копируем хост в указанное место
-        size_t host_length = colon_position - addr;
-        strncpy(host, addr, host_length);
-        host[host_length] = '\0'; // завершаем строку
-
-        // Преобразуем строку порта в целое число
-        *port = atoi(colon_position + 1);
-    } else {
-        // Если символ ':' не найден, то устанавливаем порт в 0
-        strcpy(host, addr); // Копируем весь адрес как хост
-        *port = 0; // Порт не задан
-    }
 }
 
 
@@ -411,7 +290,10 @@ void *serving_thread_work(void *_args) {
     elog(client_logger, INFO, "request\nmethod : %s\nurl: %s\n \n\n", llhttp_method_name(request.method), request.url);
     // elog(client_logger, INFO, "message from client: \n%s\n", buffer);
 
-////////////
+    /**
+     * NOW (BC there is still not cache, so no need to keep smth)
+     * it's not important, if it's HTTP/1.0 or HTTP/1.1 and what method is
+     */
     // int is_1_0_request = (int)(request.major == 1 && request.minor == 0);
     // int is_get = (int) (request.method == HTTP_GET);
     // // тоесть если это не 1.0 get, то все =(
@@ -419,8 +301,7 @@ void *serving_thread_work(void *_args) {
     //     elog(client_logger, ERROR, "only 1.0 GET method is supported\n");
     //     // here we free what needed
     //     pthread_exit(NULL);
-    // }
-////////////////////////////////    
+    // }   
 
     char *responce_buffer = malloc(START_RESPONCE_BUFF_SIZE);
     if (responce_buffer == NULL) {
@@ -433,36 +314,6 @@ void *serving_thread_work(void *_args) {
         close(client_socket);
         pthread_exit(NULL);
     }
-
-    // //somewhere here should be check for cache-storing
-    // if (is_get_request) {
-    //     // WHAT IS KEY...
-    //     // let it be buffer
-    //     is_cached_data = 1 - get_entry(cache, buffer, responce_buffer, &cached_time);
-    //     elog(client_logger, INFO, "is_cached_data : %d cached_time: %ld\n", is_cached_data, cached_time);
-    //     if (is_cached_data && (cached_time < TTL)) {
-    //         err = write_all_bytes(responce_buffer, strlen(responce_buffer), client_socket, client_logger);
-    //         if (err) {
-    //             elog(client_logger, ERROR, "problems writing to clienr socket: %s\n", strerror(errno));
-    //             free(responce_buffer);
-    //             free(buffer);
-    //             free(request);
-    //             closeLogger(client_logger);
-    //             free(_args);
-    //             close(client_socket);
-    //             pthread_exit(NULL);
-    //         }
-    //         elog(client_logger, INFO, "wrote answer from cache\n");
-    //         free(responce_buffer);
-    //         free(buffer);
-    //         free(request);
-    //         closeLogger(client_logger);
-    //         free(_args);
-    //         close(client_socket);
-    //         pthread_exit(NULL);
-    //     }
-    // }
-
 
 
     int server_port = 0;
@@ -501,8 +352,6 @@ void *serving_thread_work(void *_args) {
     }
     
     
-    // size_t responce_buffer_size = START_RESPONCE_BUFF_SIZE;
-    // size_t received_size = 0;
     size_t responce_buffer_size = 0;
 
     http_response_t responce;
@@ -514,28 +363,13 @@ void *serving_thread_work(void *_args) {
     if (err) {
         elog(client_logger, ERROR, "got error while reading or parsing responce from server, exiting thread\n");
         // here we free resourses
-        // free(buffer);
-        // free(request);
-        // closeLogger(client_logger);
-        // free(_args);
-        // close(client_socket);
+        free(buffer);
+        closeLogger(client_logger);
+        free(_args);
+        close(client_socket);
         pthread_exit(NULL);
     }
 
-    // //another function for body
-    // // headet connection close
-    // received_size = read_max_possible(server_fd, responce_buffer, &responce_buffer_size, client_logger);
-    // if (received_size == -1) {
-    //     elog(client_logger, ERROR, "error while reading responce");
-        
-    //     free(responce_buffer);
-    //     free(buffer);
-    //     // free(request);
-    //     closeLogger(client_logger);
-    //     free(_args);
-    //     close(client_socket);
-    //     pthread_exit(0);
-    // }
     elog(client_logger, INFO, responce_buffer);
 
     close(server_fd);
@@ -559,33 +393,6 @@ void *serving_thread_work(void *_args) {
         close(client_socket);
         pthread_exit(0);
     }
-
-    // close(client_socket);
-
-
-    //here adding some stuff to cache
-    // if we are here
-    // elog(client_logger, INFO, "is get request ? %d\n", is_get_request);
-    // if (is_get_request) {
-    //     // so such data haven't been in hash at all
-    //     if (!is_cached_data) {
-    //         elog(client_logger, INFO, "data is not cached so we caching then \n");
-    //         err = insert_entry(cache, buffer, responce_buffer);
-    //         if (err) {
-    //             elog(client_logger, WARNING, "problems while trying to insert data to cache");
-    //         }
-    //         elog(client_logger, INFO, "data was cached \n");
-
-    //     } else if (is_cached_data && (cached_time >= TTL)) {
-    //         // so this data must be renewd
-    //         elog(client_logger, INFO, "data was cached but they are too old so we renewing them\n");
-    //         err = insert_replace_entry(cache, buffer, responce_buffer);
-    //         if (err) {
-    //             elog(client_logger, WARNING, "problems while trying to replace data in cache");
-    //         }
-    //         elog(client_logger, INFO, "data was recached \n");
-    //     }
-    // }
 
     free(responce_buffer);
     free(buffer);

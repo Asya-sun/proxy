@@ -16,7 +16,6 @@
 
 #include "logger/logger.h"
 #include "client.h"
-// #include "http_parser/http_parser.h"
 // #include "hashmap/hashmap.h"
 
 #define PORT 0x1234
